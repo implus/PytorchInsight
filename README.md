@@ -15,19 +15,19 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from resized image with shorter side = 256). 
 
 | Model | Top-1 Acc | Top-5 Acc | #P | GFLOPs | Download | log |
-|:-:|:-:|:-:|:-:|:-:|:-:|
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 |ResNet50       |||||[GoogleDrive]()|[log]()|
-|SE-ResNet50    ||||||
-|SK-ResNet50    ||||||
-|BAM-ResNet50   ||||||
-|CBAM-ResNet50  ||||||
-|SGE-ResNet50   ||||||
-|ResNet101      ||||||
-|SE-ResNet101   ||||||
-|SK-ResNet101   ||||||
-|BAM-ResNet101  ||||||
-|CBAM-ResNet101 ||||||
-|SGE-ResNet101  ||||||
+|SE-ResNet50    ||||||| 
+|SK-ResNet50    |||||||
+|BAM-ResNet50   |||||||
+|CBAM-ResNet50  |||||||
+|SGE-ResNet50   ||||||[log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet50.log.txt)|
+|ResNet101      |||||||
+|SE-ResNet101   |||||||
+|SK-ResNet101   |||||||
+|BAM-ResNet101  |||||||
+|CBAM-ResNet101 |||||||
+|SGE-ResNet101  ||||||[log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
 
 
 

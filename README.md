@@ -14,9 +14,9 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 ## Trained Models and Performance Table
 Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from resized image with shorter side = 256). 
 
-| Model | Top-1 Acc | Top-5 Acc | #P | GFLOPs | Download |
+| Model | Top-1 Acc | Top-5 Acc | #P | GFLOPs | Download | log |
 |:-:|:-:|:-:|:-:|:-:|:-:|
-|ResNet50       |||||[GoogleDrive]()|
+|ResNet50       |||||[GoogleDrive]()|[log]()|
 |SE-ResNet50    ||||||
 |SK-ResNet50    ||||||
 |BAM-ResNet50   ||||||

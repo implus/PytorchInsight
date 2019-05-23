@@ -16,19 +16,18 @@ Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from re
 
 | Model | Top-1 Acc | Top-5 Acc | #P | GFLOPs | Download | log |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-|ResNet50       |||||[GoogleDrive]()|[log]()|
+|ResNet50       |||||||
 |SE-ResNet50    ||||||| 
 |SK-ResNet50    |||||||
 |BAM-ResNet50   |||||||
 |CBAM-ResNet50  |||||||
-|SGE-ResNet50   ||||||[log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet50.log.txt)|
+|SGE-ResNet50   |||||[BaiduDrive:gxo9](https://pan.baidu.com/s/11bb2XBGkTqIoOunaSXOOTg)|[sge_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet50.log.txt)|
 |ResNet101      |||||||
 |SE-ResNet101   |||||||
 |SK-ResNet101   |||||||
 |BAM-ResNet101  |||||||
 |CBAM-ResNet101 |||||||
-|SGE-ResNet101  ||||||[log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
-
+|SGE-ResNet101  |||||[BaiduDrive:wqn6](https://pan.baidu.com/s/1X_qZbmC1G2qqdzbIx6C0cQ)|[sge_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
 
 
 

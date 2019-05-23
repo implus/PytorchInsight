@@ -14,6 +14,13 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 ## Trained Models and Performance Table
 Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from resized image with shorter side = 256). 
 
+|classifiaction training settings |
+|:-:|
+|RandomResizedCrop, RandomHorizontalFlip|
+|0.1 init lr, total 100 epochs, decay at every 30 epochs|
+|sync SGD, naive softmax cross entropy loss, 1e-4 weight decay, 0.9 momentum|
+|8 gpus, 32 images per gpu|
+
 ### Classification
 | Model | Top-1 Acc | Top-5 Acc | #P | GFLOPs | Download | log |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|

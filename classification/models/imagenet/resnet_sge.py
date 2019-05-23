@@ -1,27 +1,32 @@
 from .common_head import *
 
-__all__ = ['gl_resnet18', 'gl_resnet34', 'gl_resnet50', 'gl_resnet101',
-           'gl_resnet152']
+__all__ = ['sge_resnet18', 'sge_resnet34', 'sge_resnet50', 'sge_resnet101',
+           'sge_resnet152']
 
-class GL(nn.Module):
-    def __init__(self, c, g = 1):
-        super(GL, self).__init__()
+class SpatialGroupEnhance(nn.Module):
+    def __init__(self, groups = 64):
+        super(SpatialGroupEnhance, self).__init__()
+        self.groups   = groups
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.weight   = Parameter(torch.zeros(c//g, 1)) #, groups, 1, 1))
-        self.bias     = Parameter(torch.ones(c//g, 1)) #, groups, 1, 1))
+        self.weight   = Parameter(torch.zeros(1, groups, 1, 1))
+        self.bias     = Parameter(torch.ones(1, groups, 1, 1))
         self.sig      = nn.Sigmoid()
-        self.c        = c
-        self.g        = g
-        self.d        = c//g
 
     def forward(self, x): # (b, c, h, w)
-        gx = self.avg_pool(x) # b, c, 1, 1
-        weight = self.weight.expand(self.d, self.g).reshape(-1)
-        bias   = self.bias.expand(self.d, self.g).reshape(-1)
-        gx = F.group_norm(gx, 1, weight, bias)
-        x  = x * self.sig(gx)
+        b, c, h, w = x.size()
+        x = x.view(b * self.groups, -1, h, w) 
+        xn = x * self.avg_pool(x)
+        xn = xn.sum(dim=1, keepdim=True)
+        t = xn.view(b * self.groups, -1)
+        t = t - t.mean(dim=1, keepdim=True)
+        std = t.std(dim=1, keepdim=True) + 1e-5
+        t = t / std
+        t = t.view(b, self.groups, h, w)
+        t = t * self.weight + self.bias
+        t = t.view(b * self.groups, 1, h, w)
+        x = x * self.sig(t)
+        x = x.view(b, c, h, w)
         return x
-
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -46,7 +51,7 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
-        self.gl    = GL(planes)
+        self.sge    = SpatialGroupEnhance(64)
 
     def forward(self, x):
         identity = x
@@ -57,7 +62,7 @@ class BasicBlock(nn.Module):
 
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.gl(out)
+        out = self.sge(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -66,9 +71,6 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
 
         return out
-
-
-
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -84,7 +86,7 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
-        self.gl = GL(planes * self.expansion)
+        self.sge    = SpatialGroupEnhance(64)
 
     def forward(self, x):
         identity = x
@@ -99,7 +101,7 @@ class Bottleneck(nn.Module):
 
         out = self.conv3(out)
         out = self.bn3(out)
-        out = self.gl(out)
+        out = self.sge(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -108,6 +110,7 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
 
         return out
+
 
 
 
@@ -181,7 +184,7 @@ class ResNet(nn.Module):
 
 
 
-def gl_resnet18(pretrained=False, **kwargs):
+def sge_resnet18(pretrained=False, **kwargs):
     """Constructs a ResNet-18 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -190,7 +193,7 @@ def gl_resnet18(pretrained=False, **kwargs):
     return model
 
 
-def gl_resnet34(pretrained=False, **kwargs):
+def sge_resnet34(pretrained=False, **kwargs):
     """Constructs a ResNet-34 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -199,7 +202,7 @@ def gl_resnet34(pretrained=False, **kwargs):
     return model
 
 
-def gl_resnet50(pretrained=False, **kwargs):
+def sge_resnet50(pretrained=False, **kwargs):
     """Constructs a ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -208,7 +211,7 @@ def gl_resnet50(pretrained=False, **kwargs):
     return model
 
 
-def gl_resnet101(pretrained=False, **kwargs):
+def sge_resnet101(pretrained=False, **kwargs):
     """Constructs a ResNet-101 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -217,7 +220,7 @@ def gl_resnet101(pretrained=False, **kwargs):
     return model
 
 
-def gl_resnet152(pretrained=False, **kwargs):
+def sge_resnet152(pretrained=False, **kwargs):
     """Constructs a ResNet-152 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet

@@ -1,4 +1,5 @@
 checkpoints/*
+checkpoint/*
 job*
 logs/*
 __pycache__

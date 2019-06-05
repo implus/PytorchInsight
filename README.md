@@ -55,8 +55,30 @@ Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from re
 |SGE-ResNet101  |44.55M|7.858|78.7980|94.3680|[BaiduDrive(wqn6)](https://pan.baidu.com/s/1X_qZbmC1G2qqdzbIx6C0cQ)|[sge_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
 
 ### Detection
+| Model | #p | GFLOPs | Detector | Neck | ${\rm AP}_{50:95}$ (%) | ${\rm AP}_{50}$ (%) | ${\rm AP}_{75}$ (%) | Download | 
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| ResNet50      | 23.51M | 88.032  | Faster RCNN  | FPN | 37.5 | 59.1 | 40.6 | [BaiduDrive()]() |
+| SGE-ResNet50  | 23.51M | 88.149  | Faster RCNN  | FPN | 38.7 | 60.8 | 41.7 | [BaiduDrive()]() |
+| ResNet50      | 23.51M | 88.032  | Mask RCNN    | FPN | 38.6 | 60.0 | 41.9 | [BaiduDrive()]() |
+| SGE-ResNet50  | 23.51M | 88.149  | Mask RCNN    | FPN | 39.6 | 61.5 | 42.9 | [BaiduDrive()]() |
+| ResNet50      | 23.51M | 88.032  | Cascade RCNN | FPN | 41.1 | 59.3 | 44.8 | [BaiduDrive()]() |
+| SGE-ResNet50  | 23.51M | 88.149  | Cascade RCNN | FPN | 42.6 | 61.4 | 46.2 | [BaiduDrive()]() |
+| ResNet101     | 42.50M | 167.908 | Faster RCNN  | FPN | 39.4 | 60.7 | 43.0 | [BaiduDrive()]() |
+| SGE-ResNet101 | 42.50M | 168.099 | Faster RCNN  | FPN | 41.0 | 63.0 | 44.3 | [BaiduDrive()]() |
+| ResNet101     | 42.50M | 167.908 | Mask RCNN    | FPN | 40.4 | 61.6 | 44.2 | [BaiduDrive()]() |
+| SGE-ResNet101 | 42.50M | 168.099 | Mask RCNN    | FPN | 42.1 | 63.7 | 46.1 | [BaiduDrive()]() |
+| ResNet101     | 42.50M | 167.908 | Cascade RCNN | FPN | 42.6 | 60.9 | 46.4 | [BaiduDrive()]() |
+| SGE-ResNet101 | 42.50M | 168.099 | Cascade RCNN | FPN | 44.4 | 63.2 | 48.4 | [BaiduDrive()]() |
 
 
+| Model | #p | GFLOPs | Detector | Neck | ${\rm AP}_{\rm small}$ (%) | ${\rm AP}_{\rm media}$ (%) | ${\rm AP}_{\rm large}$ (%) | Download | 
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| ResNet50      | 23.51M | 88.032 | RetinaNet | FPN | 19.9 | 39.6 | 48.3 | [BaiduDrive()]() |
+| SE-ResNet50   | 26.04M | 88.152 | RetinaNet | FPN | 20.7 | 41.3 | 50.0 | [BaiduDrive()]() |
+| SK-ResNet50   | 24.11M | 89.414 | RetinaNet | FPN | 20.2 | 40.9 | 50.4 | [BaiduDrive()]() |
+| BAM-ResNet50  | 23.87M | 89.804 | RetinaNet | FPN | 19.6 | 40.1 | 49.9 | [BaiduDrive()]() |
+| CBAM-ResNet50 | 26.04M | 88.302 | RetinaNet | FPN | 21.8 | 40.8 | 49.5 | [BaiduDrive()]() |
+| SGE-ResNet50  | 23.51M | 88.149 | RetinaNet | FPN | 21.8 | 41.2 | 49.9 | [BaiduDrive()]() |
 
 
 ## Citation

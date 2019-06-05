@@ -1,0 +1,12 @@
+job*
+jobs/
+work_dirs/
+logs/
+outs/
+data/
+venv/
+build/
+dist/
+.egg/
+egg/
+*.egg-info/

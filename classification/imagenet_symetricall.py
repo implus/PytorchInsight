@@ -15,6 +15,7 @@ import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data as data
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 import torchvision.datasets as datasets
 import torchvision.models as models
 import models.imagenet as customized_models
@@ -32,6 +33,22 @@ def flush_print(func):
     return new_print
 print = flush_print(print)
 
+class SMSELoss(nn.MSELoss):
+    def __init__(self, batch_size = 256, W=7, reduction='mean'):
+        super(SMSELoss, self).__init__(None, None, reduction)
+        self.indices  = torch.tensor(range(W - 1, -1, -1)).cuda()
+        self.odd_inds = torch.tensor(range(1, batch_size, 2)).cuda()
+        self.even_inds= torch.tensor(range(0, batch_size, 2)).cuda()
+        print(self.indices, self.odd_inds, self.even_inds)
+
+    def forward(self, input):
+        #print('input size = ', input.size())
+        left  = input.index_select(0, self.even_inds)
+        right = input.index_select(0, self.odd_inds)
+        #print('left size = ', left.size(), 'right size = ', right.size())
+        right = torch.index_select(right, 3, self.indices)
+        #print('left size = ', left.size(), 'right size = ', right.size())
+        return torch.nn.functional.mse_loss(left, right, reduction=self.reduction)
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -104,20 +121,23 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
+# Loss
+parser.add_argument('--lambda-mse', '-lmse', default=1e-5, type=float,
+                    help='loss for mse (default: 1e-5)')
+
+
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
 # Use CUDA
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-use_cuda = torch.cuda.is_available()
 
 # Random seed
 if args.manualSeed is None:
     args.manualSeed = random.randint(1, 10000)
 random.seed(args.manualSeed)
 torch.manual_seed(args.manualSeed)
-if use_cuda:
-    torch.cuda.manual_seed_all(args.manualSeed)
+torch.cuda.manual_seed_all(args.manualSeed)
 
 best_acc = 0  # best test accuracy
 
@@ -133,10 +153,31 @@ def fast_collate(batch):
         if nump_array.ndim < 3:
             nump_array = np.expand_dims(nump_array, axis=-1)
         nump_array = np.rollaxis(nump_array, 2)
-
         tensor[i] += torch.from_numpy(nump_array)
 
     return tensor, targets
+
+def symetric_collate(batch):
+    imgs = [img[0] for img in batch] + [F.hflip(img[0]) for img in batch]
+    tars = [target[1] for target in batch] + [target[1] for target in batch]
+    targets = torch.tensor(tars, dtype=torch.int64)
+    w = imgs[0].size[0]
+    h = imgs[0].size[1]
+    l = len(imgs) // 2
+    tensor = torch.zeros((len(imgs), 3, h, w), dtype=torch.uint8)
+    for i, img in enumerate(imgs):
+        nump_array = np.asarray(img, dtype=np.uint8)
+        # tens = torch.from_numpy(nump_array)
+        if nump_array.ndim < 3:
+            nump_array = np.expand_dims(nump_array, axis=-1)
+        nump_array = np.rollaxis(nump_array, 2)
+        tensor[i] += torch.from_numpy(nump_array)
+
+    tensor  = tensor.view(2, l, 3, h, w).transpose(0, 1).reshape(-1, 3, h, w)
+    targets = targets.view(2, l).transpose(0, 1).reshape(-1)
+
+    return tensor, targets
+
 
 class data_prefetcher():
     def __init__(self, loader):
@@ -184,17 +225,17 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    data_aug_scale = (0.08, 1.0) if args.modelsize == 'large' else (0.92, 1.0)
+    data_aug_scale = (0.08, 1.0) if args.modelsize == 'large' else (0.2, 1.0)
 
     train_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(traindir, transforms.Compose([
             transforms.RandomResizedCrop(224, scale = data_aug_scale),
-            transforms.RandomHorizontalFlip(),
+            # transforms.RandomHorizontalFlip(),
             # transforms.ToTensor(),
             # normalize,
         ])),
         batch_size=args.train_batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True, collate_fn=fast_collate)
+        num_workers=args.workers, pin_memory=True, collate_fn=symetric_collate)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -234,6 +275,8 @@ def main():
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
+    criterion_mse_train = SMSELoss(args.train_batch * 2).cuda()
+    criterions_train = (criterion, criterion_mse_train)
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Resume
@@ -269,7 +312,7 @@ def main():
 
     if args.evaluate:
         print('\nEvaluation only')
-        test_loss, test_acc = test(val_loader, model, criterion, start_epoch, use_cuda)
+        test_loss, test_acc = test(val_loader, model, criterion, start_epoch, args.lambda_mse)
         print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         return
 
@@ -279,8 +322,8 @@ def main():
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
-        test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
+        train_loss, train_acc = train(train_loader, model, criterions_train, optimizer, epoch, args.lambda_mse)
+        test_loss, test_acc = test(val_loader, model, criterion, epoch, args.lambda_mse)
 
         # append logger file
         logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
@@ -301,7 +344,9 @@ def main():
     print('Best acc:')
     print(best_acc)
 
-def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
+def train(train_loader, model, criterions, optimizer, epoch, lambda_mse):
+    criterion, criterion_mse = criterions
+
     # switch to train mode
     model.train()
     torch.set_grad_enabled(True)
@@ -309,6 +354,8 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    losses_ = AverageMeter()
+    losses_mse_ = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     end = time.time()
@@ -324,7 +371,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     # for batch_idx, (inputs, targets) in enumerate(train_loader):
         batch_idx += 1
         batch_size = inputs.size(0)
-        if batch_size < args.train_batch:
+        if batch_size != args.train_batch * 2:
             break
         # measure data loading time
         data_time.update(time.time() - end)
@@ -334,12 +381,16 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         #inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        outputs, features = model(inputs)
+        loss_ = criterion(outputs, targets) 
+        loss_mse_ = criterion_mse(features) * lambda_mse
+        loss  = loss_ + loss_mse_
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
         losses.update(loss.data, inputs.size(0))
+        losses_.update(loss_.data, inputs.size(0))
+        losses_mse_.update(loss_mse_.data, inputs.size(0))
         top1.update(prec1, inputs.size(0))
         top5.update(prec5, inputs.size(0))
 
@@ -353,7 +404,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} ({loss_:.4f}, {loss_mse_:.4f})| top1: {top1: .4f} | top5: {top5: .4f}'.format(
                     batch=batch_idx + 1,
                     size=len(train_loader),
                     data=data_time.val,
@@ -361,6 +412,8 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
                     loss=losses.avg,
+                    loss_=losses_.avg,
+                    loss_mse_=losses_mse_.avg,
                     top1=top1.avg,
                     top5=top5.avg,
                     )
@@ -373,7 +426,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     bar.finish()
     return (losses.avg, top1.avg)
 
-def test(val_loader, model, criterion, epoch, use_cuda):
+def test(val_loader, model, criterion, epoch, lambda_mse):
     global best_acc
 
     batch_time = AverageMeter()
@@ -405,16 +458,13 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
         # compute output
         with torch.no_grad():
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            outputs, features = model(inputs)
+            loss  = criterion(outputs, targets) 
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        # losses.update(loss.data[0], inputs.size(0))
         losses.update(loss.data, inputs.size(0))
-        #top1.update(prec1[0], inputs.size(0))
         top1.update(prec1, inputs.size(0))
-        #top5.update(prec5[0], inputs.size(0))
         top5.update(prec5, inputs.size(0))
 
         # measure elapsed time

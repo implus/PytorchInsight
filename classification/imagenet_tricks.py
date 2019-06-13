@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.parallel
+import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data as data
@@ -56,7 +57,15 @@ parser.add_argument('-d', '--data', default='path to dataset', type=str)
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 # Optimization options
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
+parser.add_argument('--mixup', dest='mixup', action='store_true',
+                    help='whether to use mixup')
+parser.add_argument('--alpha', default=0.2, type=float,
+                    metavar='mixup alpha', help='alpha value for mixup B(alpha, alpha) distribution')
+parser.add_argument('--cos', dest='cos', action='store_true', 
+                    help='using cosine decay lr schedule')
+parser.add_argument('--warmup', '--wp', default=5, type=int,
+                    help='number of epochs to warmup')
+parser.add_argument('--epochs', default=120, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -68,7 +77,7 @@ parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--drop', '--dropout', default=0, type=float,
                     metavar='Dropout', help='Dropout ratio')
-parser.add_argument('--schedule', type=int, nargs='+', default=[150, 225],
+parser.add_argument('--schedule', type=int, nargs='+', default=[30, 60, 90],
                         help='Decrease learning rate at these epochs.')
 parser.add_argument('--gamma', type=float, default=0.1, help='LR is multiplied by gamma on schedule.')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -233,8 +242,11 @@ def main():
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    # criterion = nn.CrossEntropyLoss().cuda()
+    criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
+
+    optimizer = set_optimizer(model)
+    #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Resume
     title = 'ImageNet-' + args.arch
@@ -333,9 +345,14 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         #    inputs, targets = inputs.cuda(), targets.cuda(async=True)
         #inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
-        # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        if args.mixup:
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha, use_cuda)
+            outputs = model(inputs)
+            loss_func = mixup_criterion(targets_a, targets_b, lam)
+            loss = loss_func(criterion, outputs)
+        else:
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
@@ -448,12 +465,73 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
 
+def set_optimizer(model):
+    params = [{'params': [p for name, p in model.named_parameters() if \
+            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+            , {'params': [p for name, p in model.named_parameters() if \
+            ('bias' not in name and 'bn' not in name)]}]
+    names = [{'params': [name for name, p in model.named_parameters() if \
+            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+            , {'params': [name for name, p in model.named_parameters() if \
+            ('bias' not in name and 'bn' not in name)]}]
+    print('optimizer group names:', names)
+    optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    print('optimizer = ', optimizer)
+    return optimizer
+
 def adjust_learning_rate(optimizer, epoch):
     global state
-    if epoch in args.schedule:
-        state['lr'] *= args.gamma
+
+    def adjust_optimizer():
         for param_group in optimizer.param_groups:
             param_group['lr'] = state['lr']
+
+    if epoch < args.warmup:
+        state['lr'] = args.lr * (epoch + 1) / args.warmup
+        adjust_optimizer()
+
+    elif args.cos: # cosine decay lr schedule (Note: epoch-wise, not batch-wise)
+        state['lr'] = args.lr * 0.5 * (1 + np.cos(np.pi * epoch / args.epochs))
+        adjust_optimizer()
+
+    elif epoch in args.schedule: # step lr schedule
+        state['lr'] *= args.gamma
+        adjust_optimizer()
+
+class SoftCrossEntropyLoss(nn.NLLLoss):
+    def __init__(self, label_smoothing=0, num_classes=1000, **kwargs):
+        assert label_smoothing >= 0 and label_smoothing <= 1
+        super(SoftCrossEntropyLoss, self).__init__(**kwargs)
+        self.confidence = 1 - label_smoothing
+        self.other      = label_smoothing * 1.0 / (num_classes - 1)
+        self.criterion  = nn.KLDivLoss(reduction='batchmean')
+        print('using soft celoss!!!, label_smoothing = ', label_smoothing)
+
+    def forward(self, input, target):
+        one_hot = torch.zeros_like(input)
+        one_hot.fill_(self.other)
+        one_hot.scatter_(1, target.unsqueeze(1).long(), self.confidence)
+        input   = F.log_softmax(input, 1)
+        return self.criterion(input, one_hot)
+
+def mixup_data(x, y, alpha=1.0, use_cuda=True):
+    if alpha > 0.:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.
+
+    batch_size = x.size(0)
+    if use_cuda:
+        index = torch.randperm(batch_size).cuda()
+    else:
+        index = torch.randperm(batch_size)
+
+    mixed_x = lam * x + (1 - lam) * x[index, ...]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+def mixup_criterion(y_a, y_b, lam):
+    return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 if __name__ == '__main__':
     main()

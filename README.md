@@ -19,6 +19,7 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 #### Non-Attention Models
 
 > * OctNet: Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution <sub>([paper](https://arxiv.org/pdf/1904.05049.pdf))</sub>
+> * imagenet_tricks.py: Bag of Tricks for Image Classification with Convolutional Neural Networks <sub>([paper](https://arxiv.org/pdf/1812.01187.pdf))</sub>
 
 
 

@@ -13,8 +13,10 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
+import torch.distributed as dist
 import torch.optim as optim
 import torch.utils.data as data
+import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
@@ -24,6 +26,13 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p
+
+try:
+    from apex.parallel import DistributedDataParallel as DDP
+    from apex.fp16_utils import *
+    from apex import amp, optimizers
+except ImportError:
+    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this example.")
 
 # for servers to immediately record the logs
 def flush_print(func):
@@ -57,6 +66,12 @@ parser.add_argument('-d', '--data', default='path to dataset', type=str)
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 # Optimization options
+parser.add_argument('--opt-level', default='O2', type=str, 
+        help='O2 is mixed FP16/32 training, see more in https://github.com/NVIDIA/apex/tree/f5cd5ae937f168c763985f627bbf850648ea5f3f/examples/imagenet')
+parser.add_argument('--keep-batchnorm-fp32', default=True, action='store_true',
+                    help='keeping cudnn bn leads to fast training')
+parser.add_argument('--loss-scale', type=float, default=1.0)
+
 parser.add_argument('--mixup', dest='mixup', action='store_true',
                     help='whether to use mixup')
 parser.add_argument('--alpha', default=0.2, type=float,
@@ -71,7 +86,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--train-batch', default=256, type=int, metavar='N',
                     help='train batchsize (default: 256)')
-parser.add_argument('--test-batch', default=200, type=int, metavar='N',
+parser.add_argument('--test-batch', default=125, type=int, metavar='N',
                     help='test batchsize (default: 200)')
 parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
                     metavar='LR', help='initial learning rate')
@@ -85,6 +100,8 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 # Checkpoints
+parser.add_argument('--print-freq', '-p', default=10, type=int,
+                    metavar='N', help='print frequency (default: 10)')
 parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metavar='PATH',
                     help='path to save checkpoint (default: checkpoint)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -110,14 +127,18 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 #Device options
-parser.add_argument('--gpu-id', default='0', type=str,
-                    help='id(s) for CUDA_VISIBLE_DEVICES')
+#parser.add_argument('--gpu-id', default='0', type=str, help='id(s) for CUDA_VISIBLE_DEVICES')
+parser.add_argument('--local_rank', default=0, type=int)
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
+print("opt_level = {}".format(args.opt_level))
+print("keep_batchnorm_fp32 = {}".format(args.keep_batchnorm_fp32), type(args.keep_batchnorm_fp32))
+print("loss_scale = {}".format(args.loss_scale), type(args.loss_scale))
+
 # Use CUDA
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+# os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 use_cuda = torch.cuda.is_available()
 
 # Random seed
@@ -184,36 +205,17 @@ def main():
     global best_acc
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
-    if not os.path.isdir(args.checkpoint):
+    if not os.path.isdir(args.checkpoint) and args.local_rank == 0:
         mkdir_p(args.checkpoint)
 
-    # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'valf')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    args.distributed = True
+    args.gpu = args.local_rank
+    torch.cuda.set_device(args.gpu)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    args.world_size = torch.distributed.get_world_size()
+    print('world_size = ', args.world_size)
 
-    data_aug_scale = (0.08, 1.0) if args.modelsize == 'large' else (0.92, 1.0)
-
-    train_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(traindir, transforms.Compose([
-            transforms.RandomResizedCrop(224, scale = data_aug_scale),
-            transforms.RandomHorizontalFlip(),
-            # transforms.ToTensor(),
-            # normalize,
-        ])),
-        batch_size=args.train_batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True, collate_fn=fast_collate)
-
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Scale(256),
-            transforms.CenterCrop(224),
-            # transforms.ToTensor(),
-            # normalize,
-        ])),
-        batch_size=args.test_batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True, collate_fn=fast_collate)
+    assert torch.backends.cudnn.enabled, "Amp requires cudnn backend to be enabled."
 
     # create model
     if args.pretrained:
@@ -232,21 +234,55 @@ def main():
     print('Flops:  %.3f' % (flops / 1e9))
     print('Params: %.2fM' % (params / 1e6))
 
-
-    if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
-        model.cuda()
-    else:
-        model = torch.nn.DataParallel(model).cuda()
-
     cudnn.benchmark = True
-
     # define loss function (criterion) and optimizer
     # criterion = nn.CrossEntropyLoss().cuda()
     criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
+    model = model.cuda()
 
     optimizer = set_optimizer(model)
     #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
+
+    model, optimizer = amp.initialize(model, optimizer,
+                                      opt_level=args.opt_level,
+                                      keep_batchnorm_fp32=args.keep_batchnorm_fp32,
+                                      loss_scale=args.loss_scale)
+
+    #model = torch.nn.DataParallel(model).cuda()
+    #model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    model = DDP(model, delay_allreduce=True)
+
+    # Data loading code
+    traindir = os.path.join(args.data, 'train')
+    valdir = os.path.join(args.data, 'valf')
+    #normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    data_aug_scale = (0.08, 1.0) if args.modelsize == 'large' else (0.2, 1.0)
+
+    train_dataset = datasets.ImageFolder(traindir, transforms.Compose([
+            transforms.RandomResizedCrop(224, scale = data_aug_scale),
+            transforms.RandomHorizontalFlip(),
+            # transforms.ToTensor(),
+            # normalize,
+        ]))
+    val_dataset   = datasets.ImageFolder(valdir, transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            # transforms.ToTensor(),
+            # normalize,
+        ]))
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=args.train_batch, shuffle=False,
+        num_workers=args.workers, pin_memory=True, sampler=train_sampler, collate_fn=fast_collate)
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=args.test_batch, shuffle=False,
+        num_workers=args.workers, pin_memory=True, sampler=val_sampler, collate_fn=fast_collate)
+
 
     # Resume
     title = 'ImageNet-' + args.arch
@@ -273,10 +309,12 @@ def main():
             optimizer.load_state_dict(checkpoint['optimizer'])
         else:
             print('new optimizer !')
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+        if args.local_rank == 0:
+            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
+        if args.local_rank == 0:
+            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+            logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
 
 
     if args.evaluate:
@@ -287,28 +325,33 @@ def main():
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
+        train_sampler.set_epoch(epoch)
+
         adjust_learning_rate(optimizer, epoch)
 
-        print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
+        if args.local_rank == 0:
+            print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
         train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
         test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
 
-        # append logger file
-        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
-
         # save model
-        is_best = test_acc > best_acc
-        best_acc = max(test_acc, best_acc)
-        save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'acc': test_acc,
-                'best_acc': best_acc,
-                'optimizer' : optimizer.state_dict(),
-            }, is_best, checkpoint=args.checkpoint)
+        if args.local_rank == 0:
+            # append logger file
+            logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
 
-    logger.close()
+            is_best = test_acc > best_acc
+            best_acc = max(test_acc, best_acc)
+            save_checkpoint({
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'acc': test_acc,
+                    'best_acc': best_acc,
+                    'optimizer' : optimizer.state_dict(),
+                }, is_best, checkpoint=args.checkpoint)
+
+    if args.local_rank == 0:
+        logger.close()
 
     print('Best acc:')
     print(best_acc)
@@ -319,13 +362,13 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     torch.set_grad_enabled(True)
 
     batch_time = AverageMeter()
-    data_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     end = time.time()
 
-    bar = Bar('Processing', max=len(train_loader))
+    if args.local_rank == 0:
+        bar = Bar('Processing', max=len(train_loader))
     show_step = len(train_loader) // 10
     
     prefetcher = data_prefetcher(train_loader)
@@ -339,7 +382,6 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         if batch_size < args.train_batch:
             break
         # measure data loading time
-        data_time.update(time.time() - end)
 
         #if use_cuda:
         #    inputs, targets = inputs.cuda(), targets.cuda(async=True)
@@ -349,52 +391,60 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha, use_cuda)
             outputs = model(inputs)
             loss_func = mixup_criterion(targets_a, targets_b, lam)
-            loss = loss_func(criterion, outputs)
+            old_loss = loss_func(criterion, outputs)
         else:
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
-
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.data, inputs.size(0))
-        top1.update(prec1, inputs.size(0))
-        top5.update(prec5, inputs.size(0))
+            old_loss = criterion(outputs, targets)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        # loss.backward()
+        with amp.scale_loss(old_loss, optimizer) as loss:
+            loss.backward()
         optimizer.step()
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
 
-        # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(train_loader),
-                    data=data_time.val,
-                    bt=batch_time.val,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
-                    )
-        if (batch_idx) % show_step == 0:
-            print(bar.suffix)
-        bar.next()
+        if batch_idx % args.print_freq == 0:
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+            reduced_loss = reduce_tensor(loss.data)
+            prec1        = reduce_tensor(prec1)
+            prec5        = reduce_tensor(prec5)
+
+            # to_python_float incurs a host<->device sync
+            losses.update(to_python_float(reduced_loss), inputs.size(0))
+            top1.update(to_python_float(prec1), inputs.size(0))
+            top5.update(to_python_float(prec5), inputs.size(0))
+
+            torch.cuda.synchronize()
+            # measure elapsed time
+            batch_time.update((time.time() - end) / args.print_freq)
+            end = time.time()
+
+            if args.local_rank == 0: # plot progress
+                bar.suffix  = '({batch}/{size}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+                            batch=batch_idx + 1,
+                            size=len(train_loader),
+                            bt=batch_time.val,
+                            total=bar.elapsed_td,
+                            loss=losses.avg,
+                            top1=top1.avg,
+                            top5=top5.avg,
+                            )
+                bar.next()
+        if (batch_idx) % show_step == 0 and args.local_rank == 0:
+            print('E%d' % (epoch) + bar.suffix)
 
         inputs, targets = prefetcher.next()
 
-    bar.finish()
+    if args.local_rank == 0:
+        bar.finish()
     return (losses.avg, top1.avg)
 
 def test(val_loader, model, criterion, epoch, use_cuda):
     global best_acc
 
     batch_time = AverageMeter()
-    data_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
@@ -404,7 +454,8 @@ def test(val_loader, model, criterion, epoch, use_cuda):
     # torch.set_grad_enabled(False)
 
     end = time.time()
-    bar = Bar('Processing', max=len(val_loader))
+    if args.local_rank == 0:
+        bar = Bar('Processing', max=len(val_loader))
 
     prefetcher = data_prefetcher(val_loader)
     inputs, targets = prefetcher.next()
@@ -413,8 +464,6 @@ def test(val_loader, model, criterion, epoch, use_cuda):
     while inputs is not None:
     # for batch_idx, (inputs, targets) in enumerate(val_loader):
         batch_idx += 1
-        # measure data loading time
-        data_time.update(time.time() - end)
 
         #if use_cuda:
         #    inputs, targets = inputs.cuda(), targets.cuda()
@@ -427,36 +476,38 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        # losses.update(loss.data[0], inputs.size(0))
-        losses.update(loss.data, inputs.size(0))
-        #top1.update(prec1[0], inputs.size(0))
-        top1.update(prec1, inputs.size(0))
-        #top5.update(prec5[0], inputs.size(0))
-        top5.update(prec5, inputs.size(0))
+
+        reduced_loss = reduce_tensor(loss.data)
+        prec1        = reduce_tensor(prec1)
+        prec5        = reduce_tensor(prec5)
+
+        # to_python_float incurs a host<->device sync
+        losses.update(to_python_float(reduced_loss), inputs.size(0))
+        top1.update(to_python_float(prec1), inputs.size(0))
+        top5.update(to_python_float(prec5), inputs.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(val_loader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
-                    )
-        bar.next()
+        if args.local_rank == 0:
+            bar.suffix  = '({batch}/{size}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+                        batch=batch_idx + 1,
+                        size=len(val_loader),
+                        bt=batch_time.avg,
+                        total=bar.elapsed_td,
+                        loss=losses.avg,
+                        top1=top1.avg,
+                        top5=top5.avg,
+                        )
+            bar.next()
 
         inputs, targets = prefetcher.next()
 
-
-    print(bar.suffix)
-    bar.finish()
+    if args.local_rank == 0:
+        print(bar.suffix)
+        bar.finish()
     return (losses.avg, top1.avg)
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
@@ -532,6 +583,12 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
 
 def mixup_criterion(y_a, y_b, lam):
     return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+def reduce_tensor(tensor):
+    rt = tensor.clone()
+    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
+    rt /= args.world_size
+    return rt
 
 if __name__ == '__main__':
     main()

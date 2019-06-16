@@ -27,6 +27,9 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p
 
+import warnings
+warnings.filterwarnings('ignore')
+
 try:
     from apex.parallel import DistributedDataParallel as DDP
     from apex.fp16_utils import *
@@ -70,7 +73,7 @@ parser.add_argument('--opt-level', default='O2', type=str,
         help='O2 is mixed FP16/32 training, see more in https://github.com/NVIDIA/apex/tree/f5cd5ae937f168c763985f627bbf850648ea5f3f/examples/imagenet')
 parser.add_argument('--keep-batchnorm-fp32', default=True, action='store_true',
                     help='keeping cudnn bn leads to fast training')
-parser.add_argument('--loss-scale', type=float, default=1.0)
+parser.add_argument('--loss-scale', type=float, default=None)
 
 parser.add_argument('--mixup', dest='mixup', action='store_true',
                     help='whether to use mixup')
@@ -492,7 +495,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
         # plot progress
         if args.local_rank == 0:
-            bar.suffix  = '({batch}/{size}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            bar.suffix  = 'Valid({batch}/{size}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
                         batch=batch_idx + 1,
                         size=len(val_loader),
                         bt=batch_time.avg,

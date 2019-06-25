@@ -244,9 +244,10 @@ def main():
     criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
     model = model.cuda()
 
+    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
+
     optimizer = set_optimizer(model)
     #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
 
     model, optimizer = amp.initialize(model, optimizer,
                                       opt_level=args.opt_level,

@@ -75,6 +75,8 @@ parser.add_argument('--keep-batchnorm-fp32', default=True, action='store_true',
                     help='keeping cudnn bn leads to fast training')
 parser.add_argument('--loss-scale', type=float, default=None)
 
+parser.add_argument('--label-smoothing', '--ls', default=0.1, type=float)
+
 parser.add_argument('--mixup', dest='mixup', action='store_true',
                     help='whether to use mixup')
 parser.add_argument('--alpha', default=0.2, type=float,
@@ -83,7 +85,7 @@ parser.add_argument('--cos', dest='cos', action='store_true',
                     help='using cosine decay lr schedule')
 parser.add_argument('--warmup', '--wp', default=5, type=int,
                     help='number of epochs to warmup')
-parser.add_argument('--epochs', default=120, type=int, metavar='N',
+parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -102,6 +104,9 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
+parser.add_argument('--wd-all', dest = 'wdall', action='store_true', 
+                    help='weight decay on all parameters')
+
 # Checkpoints
 parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
@@ -109,6 +114,7 @@ parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metava
                     help='path to save checkpoint (default: checkpoint)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+
 # Architecture
 parser.add_argument('--modelsize', '-ms', metavar='large', default='large', \
                     choices=['large', 'small'], \
@@ -240,12 +246,13 @@ def main():
     cudnn.benchmark = True
     # define loss function (criterion) and optimizer
     # criterion = nn.CrossEntropyLoss().cuda()
-    criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
+    criterion = SoftCrossEntropyLoss(label_smoothing=args.label_smoothing).cuda()
     model = model.cuda()
 
+    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
+    state['lr'] = args.lr
     optimizer = set_optimizer(model)
     #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
 
     model, optimizer = amp.initialize(model, optimizer,
                                       opt_level=args.opt_level,
@@ -520,17 +527,21 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
 
 def set_optimizer(model):
-    params = [{'params': [p for name, p in model.named_parameters() if \
-            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-            , {'params': [p for name, p in model.named_parameters() if \
-            ('bias' not in name and 'bn' not in name)]}]
-    names = [{'params': [name for name, p in model.named_parameters() if \
-            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-            , {'params': [name for name, p in model.named_parameters() if \
-            ('bias' not in name and 'bn' not in name)]}]
-    print('optimizer group names:', names)
-    optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    print('optimizer = ', optimizer)
+    if args.wdall:
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        print('weight decay on all parameters')
+    else:
+        params = [{'params': [p for name, p in model.named_parameters() if \
+                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+                , {'params': [p for name, p in model.named_parameters() if \
+                ('bias' not in name and 'bn' not in name)]}]
+        names = [{'params': [name for name, p in model.named_parameters() if \
+                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+                , {'params': [name for name, p in model.named_parameters() if \
+                ('bias' not in name and 'bn' not in name)]}]
+        print('optimizer group names:', names)
+        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        print('optimizer = ', optimizer)
     return optimizer
 
 def adjust_learning_rate(optimizer, epoch):

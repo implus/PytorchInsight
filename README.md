@@ -24,7 +24,7 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 
 
 ## Trained Models and Performance Table
-Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from resized image with shorter side = 256). 
+Single crop validation error on ImageNet-1k (center 224x224 crop from resized image with shorter side = 256). 
 
 ||classifiaction training settings for media and large models|
 |:-:|:-:|
@@ -40,16 +40,17 @@ Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from re
 
 ### ShuffleNetV2_1x
 
-You may need to add some models to use in classification/models/imagenet/__init__.py
-E.g., add 
+You may need to add some models to use in `classification/models/imagenet/__init__.py`, e.g., add 
 ```python
 from .shufflenetv2 import *
 ```
 
 ```python
-python -m torch.distributed.launch --nproc_per_node=8 imagenet_mobile.py --cos -a shufflenetv2_1x --data /path/to/imagenet1k/ --epochs 300 --wd 4e-5 --gamma 0.1 -c checkpoints/imagenet/shufflenetv2_1x --train-batch 128 --opt-level O0 # Triaing
+python -m torch.distributed.launch --nproc_per_node=8 imagenet_mobile.py --cos -a shufflenetv2_1x --data /path/to/imagenet1k/ \
+--epochs 300 --wd 4e-5 --gamma 0.1 -c checkpoints/imagenet/shufflenetv2_1x --train-batch 128 --opt-level O0 # Triaing
 
-python -m torch.distributed.launch --nproc_per_node=2 imagenet_mobile.py -a shufflenetv2_1x --data /path/to/imagenet1k/ -e --resume ../pretrain/shufflenetv2_1x.pth.tar --test-batch 100 --opt-level O0 # Testing, ~69.6% top-1 Acc
+python -m torch.distributed.launch --nproc_per_node=2 imagenet_mobile.py -a shufflenetv2_1x --data /path/to/imagenet1k/ \
+-e --resume ../pretrain/shufflenetv2_1x.pth.tar --test-batch 100 --opt-level O0 # Testing, ~69.6% top-1 Acc
 ```
 
 

@@ -26,16 +26,37 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 ## Trained Models and Performance Table
 Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from resized image with shorter side = 256). 
 
-|classifiaction training settings |
-|:-:|
-|RandomResizedCrop, RandomHorizontalFlip|
-|0.1 init lr, total 100 epochs, decay at every 30 epochs|
-|sync SGD, naive softmax cross entropy loss, 1e-4 weight decay, 0.9 momentum|
-|8 gpus, 32 images per gpu|
+||classifiaction training settings for media and large models|
+|:-:|:-:|
+|Details|RandomResizedCrop, RandomHorizontalFlip; 0.1 init lr, total 100 epochs, decay at every 30 epochs; SGD with naive softmax cross entropy loss, 1e-4 weight decay, 0.9 momentum, 8 gpus, 32 images per gpu|
+|Examples| ResNet50 |
+
+||classifiaction training settings for mobile/small models|
+|:-:|:-:|
+|Details|RandomResizedCrop, RandomHorizontalFlip; 0.4 init lr, total 300 epochs, 5 linear warm up epochs, cosine lr decay; SGD with softmax cross entropy loss and label smoothing 0.1, 4e-5 weight decay on conv weights, 0 weight decay on all other weights, 0.9 momentum, 8 gpus, 128 images per gpu|
+|Examples| ShuffleNetV2|
+
+## Typical Training & Testing Tips:
+
+### ShuffleNetV2_1x
+
+You may need to add some models to use in classification/models/imagenet/__init__.py
+E.g., add 
+```python
+from .shufflenetv2 import *
+```
+
+```python
+python -m torch.distributed.launch --nproc_per_node=8 imagenet_mobile.py --cos -a shufflenetv2_1x --data /path/to/imagenet1k/ --epochs 300 --wd 4e-5 --gamma 0.1 -c checkpoints/imagenet/shufflenetv2_1x --train-batch 128 --opt-level O0 # Triaing
+
+python -m torch.distributed.launch --nproc_per_node=2 imagenet_mobile.py -a shufflenetv2_1x --data /path/to/imagenet1k/ -e --resume ../pretrain/shufflenetv2_1x.pth.tar --test-batch 100 --opt-level O0 # Testing, ~69.6% top-1 Acc
+```
+
 
 ### Classification
 | Model |#P | GFLOPs | Top-1 Acc | Top-5 Acc | Download | log |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+|ShuffleNetV2_1x|2.28M|0.151|69.6420|88.7200|[GoogleDrive](https://drive.google.com/open?id=1pRMFnUnDRgXyVo1Gj-MaCb07aeAAhSQo)|[shufflenetv2_1x.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/shufflenetv2_1x.log.txt)|
 |ResNet50       |25.56M|4.122|76.3840|92.9080|[BaiduDrive(zuvx)](https://pan.baidu.com/s/1gwvuaqlRT9Sl4rDI9SWn_Q)|[old_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/old_resnet50.log.txt)|
 |Oct-ResNet50 (0.125)|||||||
 |SRM-ResNet50   |||||||
@@ -56,7 +77,7 @@ Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from re
 |SGE-ResNet101  |44.55M|7.858|78.7980|94.3680|[BaiduDrive(wqn6)](https://pan.baidu.com/s/1X_qZbmC1G2qqdzbIx6C0cQ)|[sge_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
 
 ### Detection
-| Model | #p | GFLOPs | Detector | Neck | ${\rm AP}_{50:95}$ (%) | ${\rm AP}_{50}$ (%) | ${\rm AP}_{75}$ (%) | Download | 
+| Model | #p | GFLOPs | Detector | Neck |  AP50:95 (%) | AP50 (%) | AP75 (%) | Download | 
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | ResNet50      | 23.51M | 88.032  | Faster RCNN  | FPN | 37.5 | 59.1 | 40.6 | [BaiduDrive()]() |
 | SGE-ResNet50  | 23.51M | 88.149  | Faster RCNN  | FPN | 38.7 | 60.8 | 41.7 | [BaiduDrive()]() |
@@ -72,7 +93,7 @@ Single crop validation error on ImageNet-1k (center 224x224/320x320 crop from re
 | SGE-ResNet101 | 42.50M | 168.099 | Cascade RCNN | FPN | 44.4 | 63.2 | 48.4 | [BaiduDrive()]() |
 
 
-| Model | #p | GFLOPs | Detector | Neck | ${\rm AP}_{\rm small}$ (%) | ${\rm AP}_{\rm media}$ (%) | ${\rm AP}_{\rm large}$ (%) | Download | 
+| Model | #p | GFLOPs | Detector | Neck | AP small (%) | AP media (%) | AP large (%) | Download | 
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | ResNet50      | 23.51M | 88.032 | RetinaNet | FPN | 19.9 | 39.6 | 48.3 | [BaiduDrive()]() |
 | SE-ResNet50   | 26.04M | 88.152 | RetinaNet | FPN | 20.7 | 41.3 | 50.0 | [BaiduDrive()]() |

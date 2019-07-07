@@ -7,7 +7,6 @@ import shutil
 import time
 import random
 import numpy as np
-import math
 
 import torch
 import torch.nn as nn
@@ -76,6 +75,8 @@ parser.add_argument('--keep-batchnorm-fp32', default=True, action='store_true',
                     help='keeping cudnn bn leads to fast training')
 parser.add_argument('--loss-scale', type=float, default=None)
 
+parser.add_argument('--label-smoothing', '--ls', default=0.1, type=float)
+
 parser.add_argument('--mixup', dest='mixup', action='store_true',
                     help='whether to use mixup')
 parser.add_argument('--alpha', default=0.2, type=float,
@@ -84,7 +85,7 @@ parser.add_argument('--cos', dest='cos', action='store_true',
                     help='using cosine decay lr schedule')
 parser.add_argument('--warmup', '--wp', default=5, type=int,
                     help='number of epochs to warmup')
-parser.add_argument('--epochs', default=120, type=int, metavar='N',
+parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -113,6 +114,7 @@ parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metava
                     help='path to save checkpoint (default: checkpoint)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+
 # Architecture
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
                     choices=model_names,
@@ -240,12 +242,12 @@ def main():
     cudnn.benchmark = True
     # define loss function (criterion) and optimizer
     # criterion = nn.CrossEntropyLoss().cuda()
-    criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
+    criterion = SoftCrossEntropyLoss(label_smoothing=args.label_smoothing).cuda()
     model = model.cuda()
 
-    args.lr = float(args.lr * float(args.train_batch*args.world_size)/256.) # default args.lr = 0.1 -> 256
+    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
+    state['lr'] = args.lr
     optimizer = set_optimizer(model)
-
     #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     model, optimizer = amp.initialize(model, optimizer,
@@ -327,18 +329,16 @@ def main():
         print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         return
 
-    scheduler = CosineAnnealingLR(optimizer,
-        args.epochs, len(train_loader), eta_min=0., warmup=args.warmup) 
-
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         train_sampler.set_epoch(epoch)
 
+        adjust_learning_rate(optimizer, epoch)
 
         if args.local_rank == 0:
-            print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
+            print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, scheduler, use_cuda)
+        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
         test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
 
         # save model
@@ -362,7 +362,7 @@ def main():
     print('Best acc:')
     print(best_acc)
 
-def train(train_loader, model, criterion, optimizer, epoch, scheduler, use_cuda):
+def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     # switch to train mode
     model.train()
     torch.set_grad_enabled(True)
@@ -382,12 +382,16 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, use_cuda)
 
     batch_idx = -1
     while inputs is not None:
+    # for batch_idx, (inputs, targets) in enumerate(train_loader):
         batch_idx += 1
-        lr = scheduler.update(epoch, batch_idx)
-
         batch_size = inputs.size(0)
         if batch_size < args.train_batch:
             break
+        # measure data loading time
+
+        #if use_cuda:
+        #    inputs, targets = inputs.cuda(), targets.cuda(async=True)
+        #inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         if args.mixup:
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha, use_cuda)
@@ -424,8 +428,7 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, use_cuda)
             end = time.time()
 
             if args.local_rank == 0: # plot progress
-                bar.suffix  = '({batch}/{size}) lr({lr:.6f}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                            lr=lr[0],
+                bar.suffix  = '({batch}/{size}) | Batch: {bt:.3f}s | Total: {total:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
                             batch=batch_idx + 1,
                             size=len(train_loader),
                             bt=batch_time.val,
@@ -465,7 +468,12 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
     batch_idx = -1
     while inputs is not None:
+    # for batch_idx, (inputs, targets) in enumerate(val_loader):
         batch_idx += 1
+
+        #if use_cuda:
+        #    inputs, targets = inputs.cuda(), targets.cuda()
+        #inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
 
         # compute output
         with torch.no_grad():
@@ -519,34 +527,38 @@ def set_optimizer(model):
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         print('weight decay on all parameters')
     else:
-        no_decay_list = []
-        decay_list = []
-        no_decay_name = []
-        decay_name = []
-        for m in model.modules():
-            if (hasattr(m, 'groups') and m.groups > 1) or isinstance(m, nn.BatchNorm2d) \
-                    or m.__class__.__name__ == 'GL':
-                no_decay_list += m.parameters(recurse=False)
-                for name, p in m.named_parameters(recurse=False):
-                    no_decay_name.append(m.__class__.__name__ + name)
-                #print('listlen = ', len(no_decay_list), 'namelen = ', len(no_decay_name))
-            else:
-                for name, p in m.named_parameters(recurse=False):
-                    if 'bias' in name:
-                        no_decay_list.append(p)
-                        no_decay_name.append(m.__class__.__name__ + name)
-                    else:
-                        decay_list.append(p)
-                        decay_name.append(m.__class__.__name__ + name)
-        print('no decay list = ', no_decay_name)
-        print('decay list = ', decay_name)
-        
-        params = [{'params': no_decay_list, 'weight_decay': 0} \
-                , {'params': decay_list}]
+        #TODO pay attention this param is defined by name, it does not work sometimes
+        params = [{'params': [p for name, p in model.named_parameters() if \
+                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+                , {'params': [p for name, p in model.named_parameters() if \
+                ('bias' not in name and 'bn' not in name)]}]
+        names = [{'params': [name for name, p in model.named_parameters() if \
+                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
+                , {'params': [name for name, p in model.named_parameters() if \
+                ('bias' not in name and 'bn' not in name)]}]
+        print('optimizer group names:', names)
         optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         print('optimizer = ', optimizer)
     return optimizer
 
+def adjust_learning_rate(optimizer, epoch):
+    global state
+
+    def adjust_optimizer():
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = state['lr']
+
+    if epoch < args.warmup:
+        state['lr'] = args.lr * (epoch + 1) / args.warmup
+        adjust_optimizer()
+
+    elif args.cos: # cosine decay lr schedule (Note: epoch-wise, not batch-wise)
+        state['lr'] = args.lr * 0.5 * (1 + np.cos(np.pi * epoch / args.epochs))
+        adjust_optimizer()
+
+    elif epoch in args.schedule: # step lr schedule
+        state['lr'] *= args.gamma
+        adjust_optimizer()
 
 class SoftCrossEntropyLoss(nn.NLLLoss):
     def __init__(self, label_smoothing=0, num_classes=1000, **kwargs):
@@ -588,55 +600,6 @@ def reduce_tensor(tensor):
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     rt /= args.world_size
     return rt
-
-class CosineAnnealingLR(object):
-    def __init__(self, optimizer, T_max, N_batch, eta_min=0, last_epoch=-1, warmup=0):
-        if not isinstance(optimizer, torch.optim.Optimizer):
-            raise TypeError('{} is not an Optimizer'.format(
-                type(optimizer).__name__))
-        self.optimizer = optimizer
-        self.T_max = T_max
-        self.N_batch = N_batch
-        self.eta_min = eta_min
-        self.warmup = warmup
-
-        if last_epoch == -1:
-            for group in optimizer.param_groups:
-                group.setdefault('initial_lr', group['lr'])
-        else:
-            for i, group in enumerate(optimizer.param_groups):
-                if 'initial_lr' not in group:
-                    raise KeyError("param 'initial_lr' is not specified "
-                                   "in param_groups[{}] when resuming an optimizer".format(i))
-        self.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
-        self.update(last_epoch+1)
-        self.last_epoch = last_epoch
-        self.iter = 0
-
-    def state_dict(self):
-        return {key: value for key, value in self.__dict__.items() if key != 'optimizer'}
-
-    def load_state_dict(self, state_dict):
-        self.__dict__.update(state_dict)
-
-    def get_lr(self):
-        if self.last_epoch < self.warmup:
-            lrs = [base_lr * (self.last_epoch + self.iter / self.N_batch) / self.warmup for base_lr in self.base_lrs]
-        else:
-            lrs = [self.eta_min + (base_lr - self.eta_min) *
-                    (1 + math.cos(math.pi * (self.last_epoch - self.warmup + self.iter / self.N_batch) / (self.T_max - self.warmup))) / 2
-                    for base_lr in self.base_lrs]
-        return lrs
-
-    def update(self, epoch, batch=0):
-        self.last_epoch = epoch
-        self.iter = batch + 1
-        lrs = self.get_lr()
-        for param_group, lr in zip(self.optimizer.param_groups, lrs):
-            param_group['lr'] = lr
-
-        return lrs
-
 
 if __name__ == '__main__':
     main()

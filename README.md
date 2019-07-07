@@ -21,7 +21,7 @@ This repository aims to accelarate the advance of Deep Learning Research, make r
 > * OctNet: Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution <sub>([paper](https://arxiv.org/pdf/1904.05049.pdf))</sub>
 > * imagenet_tricks.py: Bag of Tricks for Image Classification with Convolutional Neural Networks <sub>([paper](https://arxiv.org/pdf/1812.01187.pdf))</sub>
 
-
+----------------------------------------------------
 
 ## Trained Models and Performance Table
 Single crop validation error on ImageNet-1k (center 224x224 crop from resized image with shorter side = 256). 
@@ -37,22 +37,39 @@ Single crop validation error on ImageNet-1k (center 224x224 crop from resized im
 |Examples| ShuffleNetV2|
 
 ## Typical Training & Testing Tips:
-
-### ShuffleNetV2_1x
-
 You may need to add some models to use in `classification/models/imagenet/__init__.py`, e.g., add 
 ```python
 from .shufflenetv2 import *
 ```
 
-```python
+### Small Models 
+ShuffleNetV2_1x
+```
 python -m torch.distributed.launch --nproc_per_node=8 imagenet_mobile.py --cos -a shufflenetv2_1x --data /path/to/imagenet1k/ \
 --epochs 300 --wd 4e-5 --gamma 0.1 -c checkpoints/imagenet/shufflenetv2_1x --train-batch 128 --opt-level O0 # Triaing
 
 python -m torch.distributed.launch --nproc_per_node=2 imagenet_mobile.py -a shufflenetv2_1x --data /path/to/imagenet1k/ \
 -e --resume ../pretrain/shufflenetv2_1x.pth.tar --test-batch 100 --opt-level O0 # Testing, ~69.6% top-1 Acc
 ```
+### Large Models
+SGE-ResNet
+```
+python -W ignore imagenet.py -a sge_resnet101 --data /path/to/imagenet1k/ --epochs 100 --schedule 30 60 90 \
+--gamma 0.1 -c checkpoints/imagenet/sge_resnet101 --gpu-id 0,1,2,3,4,5,6,7 # Training
 
+python -m torch.distributed.launch --nproc_per_node=8 imagenet_fast.py -a sge_resnet101 --data /path/to/imagenet1k/ \ 
+--epochs 100 --schedule 30 60 90 --wd 1e-4 --gamma 0.1 -c checkpoints/imagenet/sge_resnet101 --train-batch 32 \ 
+--opt-level O0 --wd-all --label-smoothing 0. --warmup 0 # Training (faster) ~78.8% top-1 Acc
+```
+```
+python -W ignore imagenet.py -a sge_resnet101 --data /path/to/imagenet1k/ --gpu-id 0,1 -e --resume ../pretrain/sge_resnet101.pth.tar \
+# Testing
+
+python -m torch.distributed.launch --nproc_per_node=2 imagenet_fast.py -a sge_resnet101 --data /path/to/imagenet1k/ -e --resume \
+../pretrain/sge_resnet101.pth.tar --test-batch 100 --opt-level O0 # Testing (faster) ~78.8% top-1 Acc
+```
+
+--------------------------------------------------------
 
 ### Classification
 | Model |#P | GFLOPs | Top-1 Acc | Top-5 Acc | Download | log |

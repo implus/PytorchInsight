@@ -103,6 +103,9 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
+parser.add_argument('--wd-all', dest = 'wdall', action='store_true', 
+                    help='weight decay on all parameters')
+
 # Checkpoints
 parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
@@ -244,9 +247,9 @@ def main():
     criterion = SoftCrossEntropyLoss(label_smoothing=0.1).cuda()
     model = model.cuda()
 
-    args.lr = float(0.1 * float(args.train_batch*args.world_size)/256.)
-
+    args.lr = float(args.lr * float(args.train_batch*args.world_size)/256.) # default args.lr = 0.1 -> 256
     optimizer = set_optimizer(model)
+
     #optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     model, optimizer = amp.initialize(model, optimizer,
@@ -335,7 +338,6 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         train_sampler.set_epoch(epoch)
 
-        #adjust_learning_rate(optimizer, epoch)
 
         if args.local_rank == 0:
             print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
@@ -384,18 +386,12 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, use_cuda)
 
     batch_idx = -1
     while inputs is not None:
-    # for batch_idx, (inputs, targets) in enumerate(train_loader):
         batch_idx += 1
         lr = scheduler.update(epoch, batch_idx)
 
         batch_size = inputs.size(0)
         if batch_size < args.train_batch:
             break
-        # measure data loading time
-
-        #if use_cuda:
-        #    inputs, targets = inputs.cuda(), targets.cuda(async=True)
-        #inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         if args.mixup:
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha, use_cuda)
@@ -473,12 +469,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
     batch_idx = -1
     while inputs is not None:
-    # for batch_idx, (inputs, targets) in enumerate(val_loader):
         batch_idx += 1
-
-        #if use_cuda:
-        #    inputs, targets = inputs.cuda(), targets.cuda()
-        #inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
 
         # compute output
         with torch.no_grad():
@@ -528,37 +519,45 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
 
 def set_optimizer(model):
-    params = [{'params': [p for name, p in model.named_parameters() if \
-            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-            , {'params': [p for name, p in model.named_parameters() if \
-            ('bias' not in name and 'bn' not in name)]}]
-    names = [{'params': [name for name, p in model.named_parameters() if \
-            ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-            , {'params': [name for name, p in model.named_parameters() if \
-            ('bias' not in name and 'bn' not in name)]}]
-    print('optimizer group names:', names)
-    optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    print('optimizer = ', optimizer)
+    if args.wdall:
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        print('weight decay on all parameters')
+    else:
+        no_decay_list = []
+        decay_list = []
+        no_decay_name = []
+        decay_name = []
+        for m in model.modules():
+            if (hasattr(m, 'groups') and m.groups > 1) or isinstance(m, nn.BatchNorm2d) \
+                    or m.__class__.__name__ == 'GL':
+                no_decay_list += m.parameters(recurse=False)
+                for name, p in m.named_parameters(recurse=False):
+                    no_decay_name.append(m.__class__.__name__ + name)
+                #print('listlen = ', len(no_decay_list), 'namelen = ', len(no_decay_name))
+            else:
+                for name, p in m.named_parameters(recurse=False):
+                    if 'bias' in name:
+                        no_decay_list.append(p)
+                        no_decay_name.append(m.__class__.__name__ + name)
+                    else:
+                        decay_list.append(p)
+                        decay_name.append(m.__class__.__name__ + name)
+        print('no decay list = ', no_decay_name)
+        print('decay list = ', decay_name)
+
+        cnt = 0
+        for x in model.parameters():
+            cnt += 1
+        print('len all parameter = ', cnt, 'len of ours', len(no_decay_name), len(decay_name))
+        assert(cnt == len(no_decay_name + decay_name))
+        assert(cnt == len(no_decay_list + decay_list))
+        
+        params = [{'params': no_decay_list, 'weight_decay': 0} \
+                , {'params': decay_list}]
+        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        print('optimizer = ', optimizer)
     return optimizer
 
-def adjust_learning_rate(optimizer, epoch):
-    global state
-
-    def adjust_optimizer():
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = state['lr']
-
-    if epoch < args.warmup:
-        state['lr'] = args.lr * (epoch + 1) / args.warmup
-        adjust_optimizer()
-
-    elif args.cos: # cosine decay lr schedule (Note: epoch-wise, not batch-wise)
-        state['lr'] = args.lr * 0.5 * (1 + np.cos(np.pi * epoch / args.epochs))
-        adjust_optimizer()
-
-    elif epoch in args.schedule: # step lr schedule
-        state['lr'] *= args.gamma
-        adjust_optimizer()
 
 class SoftCrossEntropyLoss(nn.NLLLoss):
     def __init__(self, label_smoothing=0, num_classes=1000, **kwargs):
@@ -648,5 +647,7 @@ class CosineAnnealingLR(object):
             param_group['lr'] = lr
 
         return lrs
+
+
 if __name__ == '__main__':
     main()

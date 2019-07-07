@@ -59,11 +59,11 @@ python -W ignore imagenet.py -a sge_resnet101 --data /path/to/imagenet1k/ --epoc
 
 python -m torch.distributed.launch --nproc_per_node=8 imagenet_fast.py -a sge_resnet101 --data /path/to/imagenet1k/ \ 
 --epochs 100 --schedule 30 60 90 --wd 1e-4 --gamma 0.1 -c checkpoints/imagenet/sge_resnet101 --train-batch 32 \ 
---opt-level O0 --wd-all --label-smoothing 0. --warmup 0 # Training (faster) ~78.8% top-1 Acc
+--opt-level O0 --wd-all --label-smoothing 0. --warmup 0 # Training (faster) 
 ```
 ```
 python -W ignore imagenet.py -a sge_resnet101 --data /path/to/imagenet1k/ --gpu-id 0,1 -e --resume ../pretrain/sge_resnet101.pth.tar \
-# Testing
+# Testing ~78.8% top-1 Acc
 
 python -m torch.distributed.launch --nproc_per_node=2 imagenet_fast.py -a sge_resnet101 --data /path/to/imagenet1k/ -e --resume \
 ../pretrain/sge_resnet101.pth.tar --test-batch 100 --opt-level O0 # Testing (faster) ~78.8% top-1 Acc

@@ -79,18 +79,18 @@ python -m torch.distributed.launch --nproc_per_node=2 imagenet_fast.py -a sge_re
 | Model |#P | GFLOPs | Top-1 Acc | Top-5 Acc | Download | log |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 |ShuffleNetV2_1x|2.28M|0.151|69.6420|88.7200|[GoogleDrive](https://drive.google.com/file/d/1pRMFnUnDRgXyVo1Gj-MaCb07aeAAhSQo/view?usp=sharing)|[shufflenetv2_1x.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/shufflenetv2_1x.log.txt)|
-|ResNet50       |25.56M|4.122|76.3840|92.9080|[BaiduDrive(zuvx)](https://pan.baidu.com/s/1gwvuaqlRT9Sl4rDI9SWn_Q)[GoogleDrive](https://drive.google.com/file/d/1ijUOmyDCSQTU9JaNwOu4_fs1cBXHnHPF/view?usp=sharing)|[old_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/old_resnet50.log.txt)|
+|ResNet50       |25.56M|4.122|76.3840|92.9080|[BaiduDrive(zuvx)](https://pan.baidu.com/s/1gwvuaqlRT9Sl4rDI9SWn_Q)/[GoogleDrive](https://drive.google.com/file/d/1ijUOmyDCSQTU9JaNwOu4_fs1cBXHnHPF/view?usp=sharing)|[old_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/old_resnet50.log.txt)|
 |SE-ResNet50    |28.09M|4.130|77.1840|93.6720||| 
-|SK-ResNet50    |26.15M|4.185|77.5380|93.7000|[BaiduDrive(tfwn)](https://pan.baidu.com/s/1Lx5CNUeRQXOSWjzTlcO2HQ)[GoogleDrive](https://drive.google.com/file/d/1DGYWPeKc7dyJ9i-zPJcPPa2engExPOnJ/view?usp=sharing)|[sk_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sk_resnet50.log.txt)|
-|BAM-ResNet50   |25.92M|4.205|76.8980|93.4020|[BaiduDrive(z0h3)](https://pan.baidu.com/s/1ijPyAbUNQjlo_BcfDpM9Mg)[GoogleDrive](https://drive.google.com/file/d/1K5iAUAIF_yRyC2pIiA65F8Ig0x4NzOqk/view?usp=sharing)|[bam_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/bam_resnet50.log.txt)|
-|CBAM-ResNet50  |28.09M|4.139|77.6260|93.6600|[BaiduDrive(bram)](https://pan.baidu.com/s/1xSwUg9LiuHfmGGq8nQs4Ug)[GoogleDrive](https://drive.google.com/open?id=1Q5gIKPARrZzDbCPZHpuj9tqXs06c2YZN)|[cbam_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet50.log.txt)|
-|SGE-ResNet50   |25.56M|4.127|77.5840|93.6640|[BaiduDrive(gxo9)](https://pan.baidu.com/s/11bb2XBGkTqIoOunaSXOOTg)[GoogleDrive](https://drive.google.com/open?id=13HPCjrEle6aFbiCo8Afkr2jJssdNwdRn)|[sge_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet50.log.txt)|
-|ResNet101      |44.55M|7.849|78.2000|93.9060|[BaiduDrive(js5t)](https://pan.baidu.com/s/1gjPo1OQ2DFnJCU1qq39v-g)[GoogleDrive](https://drive.google.com/file/d/1125qwL4psGqJWrPDtSoxfBRLPMAnRzx4/view?usp=sharing)|[old_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/old_resnet101.log.txt)|
-|SE-ResNet101   |49.33M|7.863|78.4680|94.1020|[BaiduDrive(j2ox)](https://pan.baidu.com/s/1GSvSAlQKFH_tSw1NO88MlA)[GoogleDrive](https://drive.google.com/file/d/1MOGkkqs6v_LCgO6baGDmcFYbuOkwZjK9/view?usp=sharing)|[se_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/se_resnet101.log.txt)|
-|SK-ResNet101   |45.68M|7.978|78.7920|94.2680|[BaiduDrive(boii)](https://pan.baidu.com/s/1O1giKnrp3MVXZnlrndv8rg)[GoogleDrive](https://drive.google.com/file/d/1WB7HXx-cvUIxFRe-M61XZIzUN0a3nsbF/view?usp=sharing)|[sk_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sk_resnet101.log.txt)|
-|BAM-ResNet101  |44.91M|7.933|78.2180|94.0180|[BaiduDrive(4bw6)](https://pan.baidu.com/s/19bC9AxHt6lxdJEa2CxE-Zw)[GoogleDrive](https://drive.google.com/open?id=15EUQ6aAoXzPm1YeAH4ZqnF3orEr0dB8f)|[bam_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet101.log.txt)|
-|CBAM-ResNet101 |49.33M|7.879|78.3540|94.0640|[BaiduDrive(syj3)](https://pan.baidu.com/s/19rcXp5IOOTB0HbxmY-NgUw)[GoogleDrive](https://drive.google.com/file/d/1UHLt3C59M1fRta6i9iLsj-RvIbKusgQN/view?usp=sharing)|[cbam_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet101.log.txt)|
-|SGE-ResNet101  |44.55M|7.858|78.7980|94.3680|[BaiduDrive(wqn6)](https://pan.baidu.com/s/1X_qZbmC1G2qqdzbIx6C0cQ)[GoogleDrive](https://drive.google.com/file/d/1ihu0NVvVJZEv0zj49izapn4V0FhwxCh6/view?usp=sharing)|[sge_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
+|SK-ResNet50    |26.15M|4.185|77.5380|93.7000|[BaiduDrive(tfwn)](https://pan.baidu.com/s/1Lx5CNUeRQXOSWjzTlcO2HQ)/[GoogleDrive](https://drive.google.com/file/d/1DGYWPeKc7dyJ9i-zPJcPPa2engExPOnJ/view?usp=sharing)|[sk_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sk_resnet50.log.txt)|
+|BAM-ResNet50   |25.92M|4.205|76.8980|93.4020|[BaiduDrive(z0h3)](https://pan.baidu.com/s/1ijPyAbUNQjlo_BcfDpM9Mg)/[GoogleDrive](https://drive.google.com/file/d/1K5iAUAIF_yRyC2pIiA65F8Ig0x4NzOqk/view?usp=sharing)|[bam_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/bam_resnet50.log.txt)|
+|CBAM-ResNet50  |28.09M|4.139|77.6260|93.6600|[BaiduDrive(bram)](https://pan.baidu.com/s/1xSwUg9LiuHfmGGq8nQs4Ug)/[GoogleDrive](https://drive.google.com/open?id=1Q5gIKPARrZzDbCPZHpuj9tqXs06c2YZN)|[cbam_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet50.log.txt)|
+|SGE-ResNet50   |25.56M|4.127|77.5840|93.6640|[BaiduDrive(gxo9)](https://pan.baidu.com/s/11bb2XBGkTqIoOunaSXOOTg)/[GoogleDrive](https://drive.google.com/open?id=13HPCjrEle6aFbiCo8Afkr2jJssdNwdRn)|[sge_resnet50.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet50.log.txt)|
+|ResNet101      |44.55M|7.849|78.2000|93.9060|[BaiduDrive(js5t)](https://pan.baidu.com/s/1gjPo1OQ2DFnJCU1qq39v-g)/[GoogleDrive](https://drive.google.com/file/d/1125qwL4psGqJWrPDtSoxfBRLPMAnRzx4/view?usp=sharing)|[old_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/old_resnet101.log.txt)|
+|SE-ResNet101   |49.33M|7.863|78.4680|94.1020|[BaiduDrive(j2ox)](https://pan.baidu.com/s/1GSvSAlQKFH_tSw1NO88MlA)/[GoogleDrive](https://drive.google.com/file/d/1MOGkkqs6v_LCgO6baGDmcFYbuOkwZjK9/view?usp=sharing)|[se_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/se_resnet101.log.txt)|
+|SK-ResNet101   |45.68M|7.978|78.7920|94.2680|[BaiduDrive(boii)](https://pan.baidu.com/s/1O1giKnrp3MVXZnlrndv8rg)/[GoogleDrive](https://drive.google.com/file/d/1WB7HXx-cvUIxFRe-M61XZIzUN0a3nsbF/view?usp=sharing)|[sk_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sk_resnet101.log.txt)|
+|BAM-ResNet101  |44.91M|7.933|78.2180|94.0180|[BaiduDrive(4bw6)](https://pan.baidu.com/s/19bC9AxHt6lxdJEa2CxE-Zw)/[GoogleDrive](https://drive.google.com/open?id=15EUQ6aAoXzPm1YeAH4ZqnF3orEr0dB8f)|[bam_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet101.log.txt)|
+|CBAM-ResNet101 |49.33M|7.879|78.3540|94.0640|[BaiduDrive(syj3)](https://pan.baidu.com/s/19rcXp5IOOTB0HbxmY-NgUw)/[GoogleDrive](https://drive.google.com/file/d/1UHLt3C59M1fRta6i9iLsj-RvIbKusgQN/view?usp=sharing)|[cbam_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/cbam_resnet101.log.txt)|
+|SGE-ResNet101  |44.55M|7.858|78.7980|94.3680|[BaiduDrive(wqn6)](https://pan.baidu.com/s/1X_qZbmC1G2qqdzbIx6C0cQ)/[GoogleDrive](https://drive.google.com/file/d/1ihu0NVvVJZEv0zj49izapn4V0FhwxCh6/view?usp=sharing)|[sge_resnet101.log](https://github.com/implus/PytorchInsight/blob/master/pretrain_log/sge_resnet101.log.txt)|
 
 ### Detection
 | Model | #p | GFLOPs | Detector | Neck |  AP50:95 (%) | AP50 (%) | AP75 (%) | Download | 
@@ -116,33 +116,33 @@ python -m torch.distributed.launch --nproc_per_node=2 imagenet_fast.py -a sge_re
 
 If you find our related works useful in your research, please consider citing the paper:
     
-@inproceedings{li2019selective,
-  title={Selective Kernel Networks},
-  author={Li, Xiang and Wang, Wenhai and Hu, Xiaolin and Yang, Jian},
-  journal={IEEE Conference on Computer Vision and Pattern Recognition},
-  year={2019}
-}
+    @inproceedings{li2019selective,
+      title={Selective Kernel Networks},
+      author={Li, Xiang and Wang, Wenhai and Hu, Xiaolin and Yang, Jian},
+      journal={IEEE Conference on Computer Vision and Pattern Recognition},
+      year={2019}
+    }
 
-@inproceedings{li2019spatial,
-  title={Spatial Group-wise Enhance: Enhancing Semantic Feature Learning in Convolutional Networks},
-  author={Li, Xiang and Hu, Xiaolin and Xia, Yan and Yang, Jian},
-  journal={arXiv preprint arXiv:1905.09646},
-  year={2019}
-}
+    @inproceedings{li2019spatial,
+      title={Spatial Group-wise Enhance: Enhancing Semantic Feature Learning in Convolutional Networks},
+      author={Li, Xiang and Hu, Xiaolin and Xia, Yan and Yang, Jian},
+      journal={arXiv preprint arXiv:1905.09646},
+      year={2019}
+    }
 
-@inproceedings{li2019understanding,
-  title={Understanding the Disharmony between Weight Normalization Family and Weight Decay: e-shifted L2 Regularizer},
-  author={Li, Xiang and Chen, Shuo and Yang, Jian},
-  journal={arXiv preprint arXiv:},
-  year={2019}
-}
+    @inproceedings{li2019understanding,
+      title={Understanding the Disharmony between Weight Normalization Family and Weight Decay: e-shifted L2 Regularizer},
+      author={Li, Xiang and Chen, Shuo and Yang, Jian},
+      journal={arXiv preprint arXiv:},
+      year={2019}
+    }
 
-@inproceedings{li2019generalization,
-  title={Generalization Bound Regularizer: A Unified Framework for Understanding Weight Decay},
-  author={Li, Xiang and Chen, Shuo and Gong, Chen and Xia, Yan and Yang, Jian},
-  journal={arXiv preprint arXiv:},
-  year={2019}
-}
+    @inproceedings{li2019generalization,
+      title={Generalization Bound Regularizer: A Unified Framework for Understanding Weight Decay},
+      author={Li, Xiang and Chen, Shuo and Gong, Chen and Xia, Yan and Yang, Jian},
+      journal={arXiv preprint arXiv:},
+      year={2019}
+    }
 
 
 

@@ -70,7 +70,9 @@ python -m torch.distributed.launch --nproc_per_node=2 imagenet_fast.py -a sge_re
 ```
 #### WS-ResNet with e-shifted L2 regularizer, e = 1e-3
 ```
-python -m torch.distributed.launch --nproc_per_node=8 imagenet_fast.py -a ws_resnet50 --data /share1/public/public/imagenet1k/ --epochs 100 --schedule 30 60 90 --wd 1e-4 --gamma 0.1 -c checkpoints/imagenet/es1e-3_ws_resnet50 --train-batch 32 --opt-level O0 --label-smoothing 0. --warmup 0 --nowd-conv --mineps 1e-3 --el2
+python -m torch.distributed.launch --nproc_per_node=8 imagenet_fast.py -a ws_resnet50 --data /share1/public/public/imagenet1k/ \
+--epochs 100 --schedule 30 60 90 --wd 1e-4 --gamma 0.1 -c checkpoints/imagenet/es1e-3_ws_resnet50 --train-batch 32 \
+--opt-level O0 --label-smoothing 0. --warmup 0 --nowd-conv --mineps 1e-3 --el2
 ```
 
 --------------------------------------------------------
@@ -131,13 +133,12 @@ Note that the following models are with bias wd = 0.
 |WS-ShuffleNetV2(e = 1e-8) | 69.70  |[GoogleDrive](https://drive.google.com/file/d/1Oc04IvP9JTFM8yDnlbmB5wnugr_3Cd0I/view?usp=sharing)|
 |WS-MobileNetV1(e = 1e-6)  | 73.60  |[GoogleDrive](https://drive.google.com/file/d/17oAS8W2Mr83qhgI-gTRG1H6WJGMQdFMB/view?usp=sharing)|
 
-### Detection
-
 --------------------------------------------------------
 ## Results of "Generalization Bound Regularizer: A Unified Framework for Understanding Weight Decay"
 
+### To appear
 
-
+--------------------------------------------------------
 ## Citation
 
 If you find our related works useful in your research, please consider citing the paper:

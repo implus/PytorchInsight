@@ -34,7 +34,7 @@ Single crop validation error on ImageNet-1k (center 224x224 crop from resized im
 |:-:|:-:|
 |Details|RandomResizedCrop, RandomHorizontalFlip; 0.1 init lr, total 100 epochs, decay at every 30 epochs; SGD with naive softmax cross entropy loss, 1e-4 weight decay, 0.9 momentum, 8 gpus, 32 images per gpu|
 |Examples| ResNet50 |
-|Note    | The newest code adds one default operation: setting all bias wd = 0, please refer to the theoretical analysis of "Generalization Bound Regularizer: A Unified Framework for Understanding Weight Decay" (to appear), thereby the training accuracy can be slightly boosted, which is different from the tables below|
+|Note    | The newest code adds one default operation: setting all bias wd = 0, please refer to the theoretical analysis of "Generalization Bound Regularizer: A Unified Framework for Understanding Weight Decay" (to appear), thereby the training accuracy can be slightly boosted|
 
 ||classifiaction training settings for mobile/small models|
 |:-:|:-:|

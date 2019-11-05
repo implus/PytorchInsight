@@ -432,35 +432,7 @@ class ResNetSK(nn.Module):
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
-            if 'pytorch-classification' in pretrained: # load my model
-                print('loading lx pretrained model...', pretrained)
-                checkpoint = torch.load(pretrained)
-                own_state = self.state_dict()
-                state_dict = {k[7:]: v for k, v in checkpoint['state_dict'].items()}
-
-                print('best acc = ', checkpoint['best_acc'])
-                unexpected_keys = []
-                for name, param in state_dict.items():
-                    if name not in own_state:
-                        unexpected_keys.append(name)
-                        continue
-                    if isinstance(param, torch.nn.Parameter):
-                        param = param.data
-                        print(param)
-
-                    try:
-                        own_state[name].copy_(param)
-                    except Exception:
-                        raise RuntimeError('While copying parameter named {}, whose dimensions in the model are {} and whose dimensions in the checkpoint are {}.'.format(name, own_state[name].size(), param.size()))
-                missing_keys = set(own_state.keys()) - set(state_dict.keys())
-                err_msg = []
-                if unexpected_keys:
-                    err_msg.append('unexpected key in source state_dict: {}\n\n'.format(', '.join(unexpected_keys)))
-                if missing_keys:
-                    err_msg.append('missing keys in source state_dict: {}\n\n'.format(', '.join(missing_keys)))
-                if err_msg: logger.warn(err_msg)
-            else:
-                load_checkpoint(self, pretrained, strict=False, logger=logger)
+            load_checkpoint(self, pretrained, strict=False, logger=logger, map_location=torch.device('cpu'))
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):

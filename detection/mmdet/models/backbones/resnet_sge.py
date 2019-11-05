@@ -441,7 +441,7 @@ class ResNetSGE(nn.Module):
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
             logger = logging.getLogger()
-            load_checkpoint(self, pretrained, strict=False, logger=logger)
+            load_checkpoint(self, pretrained, strict=False, logger=logger, map_location=torch.device('cpu'))
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):

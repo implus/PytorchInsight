@@ -46,6 +46,92 @@ def flush_print(func):
 print = flush_print(print)
 
 
+from torch.optim.optimizer import Optimizer, required
+
+class LSGD(Optimizer):
+    def __init__(self, params, lr=required, momentum=0, dampening=0,
+                 weight_decay=0, nesterov=False):
+        if lr is not required and lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if momentum < 0.0:
+            raise ValueError("Invalid momentum value: {}".format(momentum))
+        if weight_decay < 0.0:
+            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+
+        defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
+                        weight_decay=weight_decay, nesterov=nesterov)
+        if nesterov and (momentum <= 0 or dampening != 0):
+            raise ValueError("Nesterov momentum requires a momentum and zero dampening")
+        super(LSGD, self).__init__(params, defaults)
+
+    def __setstate__(self, state):
+        super(LSGD, self).__setstate__(state)
+        for group in self.param_groups:
+            group.setdefault('nesterov', False)
+
+    def step(self, closure=None, print_flag=False):
+        """Performs a single optimization step.
+
+        Arguments:
+            closure (callable, optional): A closure that reevaluates the model
+                and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+
+
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                d_p = p.grad.data
+
+
+                if weight_decay != 0:
+                    d_p.add_(weight_decay, p.data)
+
+                sz = p.data.size()
+                if d_p.dim() == 4 and sz[1] != 1: # we do not consider dw conv
+                    assert(weight_decay == 0)
+                    sz = p.data.size()
+                    w  = p.data.view(sz[0], -1)
+                    wstd = w.std(dim=1).view(sz[0], 1, 1, 1)
+                    wmean = w.mean(dim=1).view(sz[0], 1, 1, 1)
+
+                    if args.local_rank == 0 and print_flag:
+                        wm = wstd.view(-1).mean().item()
+                        wmm = wmean.view(-1).mean().item()
+                        print('lam = %.6f' % args.lam, 'mineps = %.6f' % args.mineps, 
+                                '1 - eps/std = %.10f' % (1 - args.mineps / wm), 
+                                'std = %.10f' % wm, 'mean = %.10f' % wmm,  'sz = ', sz)
+                    
+                    d_p.add_(args.lam, (1 - args.mineps / wstd) * (p.data - wmean) + wmean)
+
+
+                if momentum != 0:
+                    param_state = self.state[p]
+                    if 'momentum_buffer' not in param_state:
+                        buf = param_state['momentum_buffer'] = torch.zeros_like(p.data)
+                        buf.mul_(momentum).add_(d_p)
+                    else:
+                        buf = param_state['momentum_buffer']
+                        buf.mul_(momentum).add_(1 - dampening, d_p)
+                    if nesterov:
+                        d_p = d_p.add(momentum, buf)
+                    else:
+                        d_p = buf
+
+                p.data.add_(-group['lr'], d_p)
+
+        return loss
+
+
 # Models
 default_model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -63,6 +149,24 @@ model_names = default_model_names + customized_models_names
 
 # Parse arguments
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+
+parser.add_argument('--cutmix', dest='cutmix', action='store_true')
+parser.add_argument('--cutmix_prob', default=1., type=float)
+
+parser.add_argument('--cutout', dest='cutout', action='store_true')
+parser.add_argument('--cutout_size', default=112, type=float)
+
+parser.add_argument('--el2', dest='el2', action='store_true', help='whether to use e-shifted L2 regularizer')
+parser.add_argument('--mineps', dest='mineps', default=1e-3, type=float, help='min of weights std, typically 1e-3, 1e-8, 1e-2')
+parser.add_argument('--lam', dest='lam', default=1e-4, type=float, help='lam of weights for e-shifted L2 regularizer')
+
+
+parser.add_argument('--nowd-bn', dest='nowd_bn', action='store_true',
+                    help='no weight decay on bn weights')
+parser.add_argument('--nowd-fc', dest='nowd_fc', action='store_true',
+                    help='no weight decay on fc weights')
+parser.add_argument('--nowd-conv', dest='nowd_conv', action='store_true',
+                    help='no weight decay on conv weights')
 
 # Datasets
 parser.add_argument('-d', '--data', default='path to dataset', type=str)
@@ -297,24 +401,19 @@ def main():
         print('==> Resuming from checkpoint..', args.resume)
         assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
         # model may have more keys
         t = model.state_dict()
         c = checkpoint['state_dict']
-        flag = True 
         for k in t:
             if k not in c:
                 print('not in loading dict! fill it', k, t[k])
                 c[k] = t[k]
-                flag = False
         model.load_state_dict(c)
-        #if flag:
-        #    print('optimizer load old state')
-        #    optimizer.load_state_dict(checkpoint['optimizer'])
-        #else:
-        print('new optimizer !')
+        print('optimizer load old state')
+        optimizer.load_state_dict(checkpoint['optimizer'])
         if args.local_rank == 0:
             logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
     else:
@@ -363,6 +462,7 @@ def main():
     print(best_acc)
 
 def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
+    printflag = False
     # switch to train mode
     model.train()
     torch.set_grad_enabled(True)
@@ -392,12 +492,34 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         #if use_cuda:
         #    inputs, targets = inputs.cuda(), targets.cuda(async=True)
         #inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
+        if (batch_idx) % show_step == 0 and args.local_rank == 0:
+            print_flag = True
+        else:
+            print_flag = False
 
-        if args.mixup:
+        if args.cutmix:
+            if printflag==False:
+                print('using cutmix !')
+                printflag=True
+            inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, args.cutmix_prob, use_cuda)
+            outputs = model(inputs)
+            loss_func = mixup_criterion(targets_a, targets_b, lam)
+            old_loss = loss_func(criterion, outputs)
+        elif args.mixup:
+            if printflag==False:
+                print('using mixup !')
+                printflag=True
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, args.alpha, use_cuda)
             outputs = model(inputs)
             loss_func = mixup_criterion(targets_a, targets_b, lam)
             old_loss = loss_func(criterion, outputs)
+        elif args.cutout:
+            if printflag==False:
+                print('using cutout !')
+                printflag=True
+            inputs = cutout_data(inputs, args.cutout_size, use_cuda)
+            outputs = model(inputs)
+            old_loss = criterion(outputs, targets)
         else:
             outputs = model(inputs)
             old_loss = criterion(outputs, targets)
@@ -407,7 +529,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         # loss.backward()
         with amp.scale_loss(old_loss, optimizer) as loss:
             loss.backward()
-        optimizer.step()
+        optimizer.step(print_flag=print_flag)
 
 
         if batch_idx % args.print_freq == 0:
@@ -522,23 +644,80 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
 
+
 def set_optimizer(model):
+    
+    optim_use = optim.SGD
+    if args.el2:
+        optim_use = LSGD
+        if args.local_rank == 0:
+            print('use e-shifted L2 regularizer based SGD optimizer!')
+    else:
+        if args.local_rank == 0:
+            print('use SGD optimizer!')
+
+
     if args.wdall:
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        optimizer = optim_use(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         print('weight decay on all parameters')
     else:
-        #TODO pay attention this param is defined by name, it does not work sometimes
-        params = [{'params': [p for name, p in model.named_parameters() if \
-                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-                , {'params': [p for name, p in model.named_parameters() if \
-                ('bias' not in name and 'bn' not in name)]}]
-        names = [{'params': [name for name, p in model.named_parameters() if \
-                ('bias' in name or 'bn' in name)], 'weight_decay': 0} \
-                , {'params': [name for name, p in model.named_parameters() if \
-                ('bias' not in name and 'bn' not in name)]}]
-        print('optimizer group names:', names)
-        optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-        print('optimizer = ', optimizer)
+        decay_list = []
+        no_decay_list = []
+        dns = []
+        ndns = []
+
+        for name, p in model.named_parameters():
+            no_decay_flag = False
+            dim = p.dim()
+
+            if 'bias' in name:
+                no_decay_flag = True
+            elif dim == 1:
+                if args.nowd_bn: # bn weights
+                    no_decay_flag = True
+            elif dim == 2:
+                if args.nowd_fc:  # fc weights
+                    no_decay_flag = True
+            elif dim == 4:
+                if args.nowd_conv: # conv weights
+                    no_decay_flag = True
+            else:
+                print('no valid dim!!!, dim = ', dim)
+                exit(-1)
+
+            if no_decay_flag:
+                no_decay_list.append(p)
+                ndns.append(name)
+            else:
+                decay_list.append(p)
+                dns.append(name)
+
+        if args.local_rank == 0:
+            print('------------' * 6)
+            print('no decay list = ', ndns)
+            print('------------' * 6)
+            print('decay list = ', dns)
+            print('------summary------')
+            if args.nowd_bn:
+                print('no decay on bn weights!')
+            else:
+                print('decay on bn weights!')
+            if args.nowd_conv:
+                print('no decay on conv weights!')
+            else:
+                print('decay on conv weights!')
+            if args.nowd_fc:
+                print('no decay on fc weights!')
+            else:
+                print('decay on fc weights!')
+            print('------------' * 6)
+
+        params = [{'params': no_decay_list, 'weight_decay': 0},
+                  {'params': decay_list}]
+        optimizer = optim_use(params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        if args.local_rank == 0:
+            print('optimizer = ', optimizer)
+
     return optimizer
 
 def adjust_learning_rate(optimizer, epoch):
@@ -591,6 +770,51 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
     mixed_x = lam * x + (1 - lam) * x[index, ...]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
+
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+
+def cutmix_data(x, y, cutmix_prob=1.0, use_cuda=True):
+    lam = np.random.beta(1, 1)
+
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).cuda()
+    y_a, y_b = y, y[index]
+
+    bbx1, bby1, bbx2, bby2 = rand_bbox(x.size(), lam)
+    x[:, :, bbx1:bbx2, bby1:bby2] = x[index, :, bbx1:bbx2, bby1:bby2]
+    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
+    return x, y_a, y_b, lam
+
+def cutout_data(x, cutout_size=112, use_cuda=True):
+    W = x.size(2)
+    H = x.size(3)
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cutout_size // 2, 0, W)
+    bby1 = np.clip(cy - cutout_size // 2, 0, H)
+    bbx2 = np.clip(cx + cutout_size // 2, 0, W)
+    bby2 = np.clip(cy + cutout_size // 2, 0, H)
+
+    x[:, :, bbx1:bbx2, bby1:bby2] = 0
+
+    return x
 
 def mixup_criterion(y_a, y_b, lam):
     return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)

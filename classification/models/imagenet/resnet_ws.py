@@ -1,18 +1,20 @@
 from .common_head import *
+from .. import layers as L
 
-__all__ = ['sym_old_resnet18', 'sym_old_resnet34', 'sym_old_resnet50', 'sym_old_resnet101',
-           'sym_old_resnet152']
+
+__all__ = ['ws_resnet18', 'ws_resnet34', 'ws_resnet50', 'ws_resnet101',
+           'ws_resnet152']
 
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return L.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+    return L.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
 class BasicBlock(nn.Module):
@@ -90,7 +92,7 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
         super(ResNet, self).__init__()
         self.inplanes = 64
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = L.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
@@ -101,6 +103,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+        #self.fc     = L.LConv2d(512 * block.expansion, num_classes, 1, bias=False)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -146,16 +149,14 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        fea = x
-
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
 
-        return x, fea
+        return x
 
 
-def sym_old_resnet18(pretrained=False, **kwargs):
+def ws_resnet18(pretrained=False, **kwargs):
     """Constructs a ResNet-18 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -164,7 +165,7 @@ def sym_old_resnet18(pretrained=False, **kwargs):
     return model
 
 
-def sym_old_resnet34(pretrained=False, **kwargs):
+def ws_resnet34(pretrained=False, **kwargs):
     """Constructs a ResNet-34 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -173,7 +174,7 @@ def sym_old_resnet34(pretrained=False, **kwargs):
     return model
 
 
-def sym_old_resnet50(pretrained=False, **kwargs):
+def ws_resnet50(pretrained=False, **kwargs):
     """Constructs a ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -182,7 +183,7 @@ def sym_old_resnet50(pretrained=False, **kwargs):
     return model
 
 
-def sym_old_resnet101(pretrained=False, **kwargs):
+def ws_resnet101(pretrained=False, **kwargs):
     """Constructs a ResNet-101 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
@@ -191,10 +192,11 @@ def sym_old_resnet101(pretrained=False, **kwargs):
     return model
 
 
-def sym_old_resnet152(pretrained=False, **kwargs):
+def ws_resnet152(pretrained=False, **kwargs):
     """Constructs a ResNet-152 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
     return model
+

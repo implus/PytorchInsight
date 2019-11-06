@@ -401,7 +401,8 @@ def main():
         print('==> Resuming from checkpoint..', args.resume)
         assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
-        checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
+        #checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
+        checkpoint = torch.load(args.resume, map_location = lambda storage, loc: storage.cuda(args.gpu))
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
         # model may have more keys
@@ -529,7 +530,11 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         # loss.backward()
         with amp.scale_loss(old_loss, optimizer) as loss:
             loss.backward()
-        optimizer.step(print_flag=print_flag)
+
+        if args.el2:
+            optimizer.step(print_flag=print_flag)
+        else:
+            optimizer.step()
 
 
         if batch_idx % args.print_freq == 0:
